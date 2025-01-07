@@ -17,6 +17,13 @@ const serializeTransaction = (obj) => {
 
   return serialized;
 };
+// Transformer un objet de transaction en un format simplifié.
+// Convertir certaines propriétés spécifiques (comme balance et amount) en nombres pour faciliter leur utilisation.
+// Crée une copie de l'objet original pour éviter de le modifier directement.
+// Vérifie si l'objet contient une propriété balance et la convertit en nombre.
+// Vérifie si l'objet contient une propriété amount et la convertit en nombre.
+// Retourne l'objet modifié avec les propriétés converties.
+
 
 export async function createAccount(data) {
   try {
@@ -78,6 +85,17 @@ export async function createAccount(data) {
     throw new Error(error.message);
   }
 }
+// createAccount : Crée un nouveau compte pour un utilisateur après avoir vérifié son autorisation et validé les données.
+// Vérifie si l'utilisateur est authentifié et autorisé.
+// Recherche l'utilisateur dans la base de données.
+// Convertit le solde (balance) en nombre décimal (float) et valide sa valeur.
+// Vérifie si c'est le premier compte de l'utilisateur pour définir le compte par défaut.
+// Si un autre compte est déjà par défaut, le désactive comme compte par défaut.
+// Crée le nouveau compte avec les données fournies.
+// Sérialise le compte créé pour le retourner dans un format simplifié.
+// Rafraîchit la page du tableau de bord (/dashboard).
+// Retourne un succès avec les données du compte créé.
+
 
 export async function getUserAccounts() {
   try {
@@ -114,3 +132,10 @@ export async function getUserAccounts() {
     return serializedAccount;
   } catch (error) {}
 }
+// getUserAccounts : Récupère tous les comptes d'un utilisateur après avoir vérifié son autorisation.
+// Vérifie si l'utilisateur est authentifié et autorisé.
+// Recherche l'utilisateur dans la base de données.
+// Récupère tous les comptes de l'utilisateur, triés par date de création (du plus récent au plus ancien).
+// Inclut le nombre de transactions associées à chaque compte.
+// Sérialise les comptes pour les retourner dans un format simplifié.
+

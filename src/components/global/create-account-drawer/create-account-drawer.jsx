@@ -8,7 +8,7 @@ import {
   DrawerTitle,
   DrawerTrigger,
 } from "@/components/ui/drawer";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { accountSchema } from "@/lib/schema";
@@ -22,17 +22,20 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
+import { createAccount } from "@/actions/dashboard";
+import { Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import useFetch from "@/hooks/use-fetch/use-fetch";
 
 const CreateAccountDrawer = ({ children }) => {
   const [open, setOpen] = useState(false);
-
   const {
     register,
     handleSubmit,
     formState: { errors },
+    setValue,
     watch,
     reset,
-    setValue,
   } = useForm({
     resolver: zodResolver(accountSchema),
     defaultValues: {
@@ -43,9 +46,30 @@ const CreateAccountDrawer = ({ children }) => {
     },
   });
 
-  const onSubmit = async(data) =>{
-    console.log(data)
-  }
+  const {
+    loading: createAccountLoading,
+    fn: createAccountFn,
+    error,
+    data: newAccount,
+  } = useFetch(createAccount);
+
+  const onSubmit = async (data) => {
+    await createAccountFn(data);
+  };
+
+  useEffect(() => {
+    if (newAccount) {
+      toast.success("Account created successfully");
+      reset();
+      setOpen(false);
+    }
+  }, [newAccount, reset]);
+
+  useEffect(() => {
+    if (error) {
+      toast.error(error.message || "Failed to create account");
+    }
+  }, [error]);
 
   return (
     <Drawer open={open} onOpenChange={setOpen}>
@@ -55,7 +79,7 @@ const CreateAccountDrawer = ({ children }) => {
           <DrawerTitle>Create New Account</DrawerTitle>
         </DrawerHeader>
         <div className="px-4 pb-4">
-          <form className="space-y-4" onSubmit={handleSubmit(onSubmit)}>
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-2">
               <label
                 htmlFor="name"
@@ -119,8 +143,8 @@ const CreateAccountDrawer = ({ children }) => {
             <div className="flex items-center justify-between rounded-lg border p-3">
               <div className="space-y-0.5">
                 <label
-                  htmlFor="balance"
-                  className="text-sm font-bold cursor-pointer"
+                  htmlFor="isDefault"
+                  className="text-base font-medium cursor-pointer"
                 >
                   Set as Default
                 </label>
@@ -130,18 +154,30 @@ const CreateAccountDrawer = ({ children }) => {
               </div>
               <Switch
                 id="isDefault"
+                checked={watch("isDefault")}
                 onCheckedChange={(checked) => setValue("isDefault", checked)}
-                checked={watch("type")}
               />
             </div>
+
             <div className="flex gap-4 pt-4">
               <DrawerClose asChild>
                 <Button type="button" variant="outline" className="flex-1">
                   Cancel
                 </Button>
               </DrawerClose>
-              <Button type="submit" className="flex-1">
-                Create account
+              <Button
+                type="submit"
+                className="flex-1"
+                disabled={createAccountLoading}
+              >
+                {createAccountLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  "Create Account"
+                )}
               </Button>
             </div>
           </form>

@@ -1,11 +1,17 @@
 "use client";
 
-import { createTransaction } from "@/actions/transaction";
-import CreateAccountDrawer from "@/components/global/create-account-drawer/create-account-drawer";
+import { useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { CalendarIcon, Loader2 } from "lucide-react";
+import { format } from "date-fns";
+import { useRouter, useSearchParams } from "next/navigation";
+import useFetch from "@/hooks/use-fetch/use-fetch";
+import { toast } from "sonner";
+
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -13,17 +19,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
-import useFetch from "@/hooks/use-fetch/use-fetch";
-import { transactionSchema } from "@/lib/schema";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import CreateAccountDrawer from "@/components/global/create-account-drawer/create-account-drawer";
 import { cn } from "@/lib/utils";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { format } from "date-fns";
-import { CalendarIcon, Loader2 } from "lucide-react";
-import { useRouter, useSearchParams } from "next/navigation";
-import React, { useEffect } from "react";
-import { useForm } from "react-hook-form";
-import { toast } from "sonner";
+import { createTransaction } from "@/actions/transaction";
+import { transactionSchema } from "@/lib/schema";
+import ReceiptScanner from "./receipt-scanner";
+
 
 const AddTransactionForm = ({
   accounts,
@@ -44,27 +51,36 @@ const AddTransactionForm = ({
     getValues, // Récupère les valeurs actuelles des champs du formulaire.
     reset, // Réinitialise les champs du formulaire.
   } = useForm({
-    resolver: zodResolver(transactionSchema), // Utilise Zod pour valider les données.
-    defaultValues: {
-      // Définit les valeurs par défaut du formulaire.
-      type: "EXPENSE",
-      amount: "",
-      description: "",
-      amountId: accounts.find((ac) => ac.isDefault)?.id,
-      date: new Date(),
-      isRecurring: false,
-    },
+    resolver: zodResolver(transactionSchema),
+    defaultValues:
+      editMode && initialData
+        ? {
+            type: initialData.type,
+            amount: initialData.amount.toString(),
+            description: initialData.description,
+            accountId: initialData.accountId,
+            category: initialData.category,
+            date: new Date(initialData.date),
+            isRecurring: initialData.isRecurring,
+            ...(initialData.recurringInterval && {
+              recurringInterval: initialData.recurringInterval,
+            }),
+          }
+        : {
+            type: "EXPENSE",
+            amount: "",
+            description: "",
+            accountId: accounts.find((ac) => ac.isDefault)?.id,
+            date: new Date(),
+            isRecurring: false,
+          },
   });
 
   const {
     loading: transactionLoading,
     fn: transactionFn,
     data: transactionResult,
-  } = useFetch(createTransaction);
-
-  const type = watch("type");
-  const isRecurring = watch("isRecurring");
-  const date = watch("date");
+  } = useFetch(editMode ? updateTransaction : createTransaction);
 
   const onSubmit = (data) => {
     const formData = {
@@ -76,6 +92,20 @@ const AddTransactionForm = ({
       transactionFn(editId, formData);
     } else {
       transactionFn(formData);
+    }
+  };
+
+  const handleScanComplete = (scannedData) => {
+    if (scannedData) {
+      setValue("amount", scannedData.amount.toString());
+      setValue("date", new Date(scannedData.date));
+      if (scannedData.description) {
+        setValue("description", scannedData.description);
+      }
+      if (scannedData.category) {
+        setValue("category", scannedData.category);
+      }
+      toast.success("Receipt scanned successfully");
     }
   };
 
@@ -91,6 +121,10 @@ const AddTransactionForm = ({
     }
   }, [transactionResult, transactionLoading, editMode]);
 
+  const type = watch("type");
+  const isRecurring = watch("isRecurring");
+  const date = watch("date");
+
   const filteredCategories = categories.filter(
     (category) => category.type === type
   );
@@ -98,7 +132,7 @@ const AddTransactionForm = ({
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
       {/* Receipt Scanner - Only show in create mode */}
-      {/* {!editMode && <ReceiptScanner onScanComplete={handleScanComplete} />} */}
+      {!editMode && <ReceiptScanner onScanComplete={handleScanComplete} />}
 
       {/* Type */}
       <div className="space-y-2">

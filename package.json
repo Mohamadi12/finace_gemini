@@ -12,6 +12,7 @@
   "dependencies": {
     "@arcjet/next": "^1.0.0-alpha.34",
     "@clerk/nextjs": "^6.9.6",
+    "@google/generative-ai": "^0.21.0",
     "@hookform/resolvers": "^3.10.0",
     "@prisma/client": "^6.1.0",
     "@radix-ui/react-accordion": "^1.2.2",

@@ -3,7 +3,10 @@
 import aj from "@/lib/arcjet";
 import { db } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { revalidatePath } from "next/cache";
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const serializeAmount = (obj) => ({
   ...obj,
@@ -13,7 +16,6 @@ const serializeAmount = (obj) => ({
 // Crée une copie de l'objet original.
 // Convertit la propriété amount en nombre décimal en utilisant la méthode .toNumber().
 // Retourne l'objet copié avec la propriété amount convertie.
-
 
 // Create Transaction
 export async function createTransaction(data) {
@@ -139,9 +141,6 @@ export async function createTransaction(data) {
 // Échec :
 // Retourne un message d'erreur clair en cas de problème.
 
-
-
-
 export async function getTransaction(id) {
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
@@ -191,26 +190,147 @@ export async function getTransaction(id) {
 // Afficher les détails d'une transaction spécifique dans une interface utilisateur.
 // Utiliser les données de la transaction pour des calculs ou des analyses.
 
-
-
 // Helper function to calculate next recurring date
 function calculateNextRecurringDate(startDate, interval) {
-    const date = new Date(startDate);
-  
-    switch (interval) {
-      case "DAILY":
-        date.setDate(date.getDate() + 1);
-        break;
-      case "WEEKLY":
-        date.setDate(date.getDate() + 7);
-        break;
-      case "MONTHLY":
-        date.setMonth(date.getMonth() + 1);
-        break;
-      case "YEARLY":
-        date.setFullYear(date.getFullYear() + 1);
-        break;
-    }
-  
-    return date;
+  const date = new Date(startDate);
+
+  switch (interval) {
+    case "DAILY":
+      date.setDate(date.getDate() + 1);
+      break;
+    case "WEEKLY":
+      date.setDate(date.getDate() + 7);
+      break;
+    case "MONTHLY":
+      date.setMonth(date.getMonth() + 1);
+      break;
+    case "YEARLY":
+      date.setFullYear(date.getFullYear() + 1);
+      break;
   }
+
+  return date;
+}
+
+export async function scanReceipt(file) {
+  try {
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+    //Convert File to ArrayBuffer
+    const arrayBuffer = await file.arrayBuffer();
+
+    //Convert ArrayBuffer to Base64
+    const base64String = Buffer.from(arrayBuffer).toString("base64");
+
+    const prompt = `
+      Analyze this receipt image and extract the following information in JSON format:
+      - Total amount (just the number)
+      - Date (in ISO format)
+      - Description or items purchased (brief summary)
+      - Merchant/store name
+      - Suggested category (one of: housing,transportation,groceries,utilities,entertainment,food,shopping,healthcare,education,personal,travel,insurance,gifts,bills,other-expense )
+      
+      Only respond with valid JSON in this exact format:
+      {
+        "amount": number,
+        "date": "ISO date string",
+        "description": "string",
+        "merchantName": "string",
+        "category": "string"
+      }
+
+      If its not a recipt, return an empty object
+    `;
+
+    const result = await model.generateContent([
+      {
+        inlineData: {
+          data: base64String,
+          mimeType: file.type,
+        },
+      },
+      prompt,
+    ]);
+
+    const response = await result.response;
+    const text = response.text();
+    const cleanedText = text.replace(/```(?:json)?\n?/g, "").trim();
+
+    try {
+      const data = JSON.parse(cleanedText);
+      return {
+        amount: parseFloat(data.amount),
+        date: new Date(data.date),
+        description: data.description,
+        category: data.category,
+        merchantName: data.merchantName,
+      };
+    } catch (parseError) {
+      console.error("Error parsing JSON response:", parseError);
+      throw new Error("Invalid response format from Gemini");
+    }
+  } catch (error) {
+    console.error("Error scanning receipt:", error);
+    throw new Error("Failed to scan receipt");
+  }
+}
+// À quoi sert ce code ?
+// Ce code est une fonction qui analyse une image de reçu (comme une photo de ticket de caisse) pour en extraire des informations utiles, comme :
+// Le montant total.
+// La date.
+// La liste des articles achetés.
+// Le nom du magasin.
+// Une catégorie (par exemple, "épicerie" ou "shopping").
+// Il utilise une IA (ici, le modèle Gemini de Google) pour comprendre ce qu'il y a dans l'image et te donner ces informations sous forme de JSON (un format de données facile à utiliser en programmation).
+// Comment ça marche, étape par étape ?
+// On reçoit une image :
+// La fonction s'appelle scanReceipt et prend en paramètre un fichier (file), qui est l'image du reçu.
+// On prépare l'IA :
+// On utilise un modèle d'IA appelé Gemini 1.5 Flash (c'est un modèle de Google qui comprend les images et le texte).
+// On dit à l'IA : "Hé, voici une image, analyse-la pour moi !".
+// On transforme l'image :
+// L'IA ne comprend pas directement les images, donc on convertit l'image en un format qu'elle peut lire : une chaîne de caractères en base64 (c'est comme traduire l'image en texte).
+// On donne des instructions à l'IA :
+// On lui dit exactement ce qu'on veut : "Extrais le montant total, la date, la description, le nom du magasin, et suggère une catégorie."
+// On lui demande de répondre en JSON, un format de données structuré.
+
+// Exemple de JSON attendu :
+// json
+// Copy
+// {
+//   "amount": 42.99,
+//   "date": "2023-10-15",
+//   "description": "Achat de nourriture",
+//   "merchantName": "Supermarket",
+//   "category": "groceries"
+// }
+
+// On envoie tout ça à l'IA :
+// On envoie l'image (en base64) et les instructions à l'IA.
+// L'IA analyse l'image et renvoie une réponse.
+// On récupère la réponse :
+// L'IA renvoie du texte, mais on s'attend à ce que ce soit du JSON.
+// On nettoie un peu le texte (par exemple, on enlève des caractères inutiles comme ).
+// On essaie de convertir ce texte en un objet JavaScript (avec JSON.parse).
+// On retourne les informations :
+// Si tout va bien, on retourne les informations extraites (montant, date, etc.).
+// Si quelque chose ne va pas (par exemple, l'IA n'a pas compris ou a renvoyé un mauvais format), on affiche une erreur.
+
+// Exemple concret
+// Imagine que tu prends une photo d'un ticket de caisse de ton épicerie. Tu envoies cette photo à cette fonction. Voici ce qui se passe :
+// L'IA regarde la photo.
+// Elle reconnaît que c'est un reçu.
+// Elle te dit :
+// Montant total : 42,99 €.
+// Date : 15 octobre 2023.
+// Description : Achat de nourriture.
+// Magasin : Supermarket.
+// Catégorie : Épicerie.
+// Et tout ça, en quelques secondes !
+// Et si ça ne marche pas ?
+// Si l'IA ne reconnaît pas l'image comme un reçu, elle renvoie un objet vide ({}).
+// Si elle renvoie quelque chose d'incompréhensible, le code affiche une erreur (par exemple, "Invalid response format from Gemini").
+// Pourquoi c'est utile ?
+// Automatisation : Plus besoin de taper manuellement les infos d'un reçu.
+// Organisation : Tu peux classer tes dépenses par catégorie (épicerie, shopping, etc.).
+// Gain de temps : En quelques secondes, tu as toutes les infos dont tu as besoin.
